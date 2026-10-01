@@ -11,17 +11,26 @@ view="${XDG_CACHE_HOME:-$HOME/.cache}/omarchy/all-backgrounds"
 
 # The image picker keeps one image per file name, and themes reuse names
 # (1.png, omarchy.png), so every background is linked into one folder as
-# <theme>--<file>. That also lets the picker's filter match theme names.
+# <theme>@<file>. That also lets the picker's filter match theme names.
 # Later sources win a clash: theme backgrounds over the user's per-theme ones,
 # as in the per-theme switcher, and a user theme over a stock theme of the
 # same name, as omarchy-theme-set stages them.
 declare -A backgrounds
 
-add_backgrounds() {
-  local theme=$1 dir=$2 image
+# Installed theme names can't contain "@" (omarchy-theme-install), but a
+# theme the user made can, so escape it out of the theme part: the first "@"
+# then always ends the theme name, and no two backgrounds share a link name.
+escape_theme() {
+  local theme=${1//%/%25}
+  REPLY=${theme//@/%40}
+}
 
+add_backgrounds() {
+  local dir=$2 image
+
+  escape_theme "$1"
   for image in "$dir"/*; do
-    [[ -f $image ]] && backgrounds["$theme--${image##*/}"]=$image
+    [[ -f $image ]] && backgrounds["$REPLY@${image##*/}"]=$image
   done
 }
 
@@ -39,9 +48,9 @@ done
 mkdir -p "$view"
 
 declare -A links
-while IFS=$'\t' read -r -d '' name target; do
+while IFS= read -r -d '' name && IFS= read -r -d '' target; do
   links[$name]=$target
-done < <(find "$view" -mindepth 1 -maxdepth 1 -type l -printf '%f\t%l\0')
+done < <(find "$view" -mindepth 1 -maxdepth 1 -type l -printf '%f\0%l\0')
 
 for name in "${!backgrounds[@]}"; do
   [[ ${links[$name]-} == "${backgrounds[$name]}" ]] || ln -sfn "${backgrounds[$name]}" "$view/$name"
@@ -58,8 +67,8 @@ current_background=$(readlink -f "$state/background" 2>/dev/null)
 staged_backgrounds=$(readlink -f "$state/theme/backgrounds" 2>/dev/null)
 
 if [[ -n $staged_backgrounds && $current_background == "$staged_backgrounds"/* ]]; then
-  theme_name=$(<"$state/theme.name")
-  current_background=${backgrounds["$theme_name--${current_background##*/}"]:-$current_background}
+  escape_theme "$(<"$state/theme.name")"
+  current_background=${backgrounds["$REPLY@${current_background##*/}"]:-$current_background}
 fi
 
 omarchy-menu-images --filterable --selected "$current_background" "$view"
