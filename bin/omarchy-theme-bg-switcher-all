@@ -14,4 +14,4 @@ for d in \
   [[ -d $d ]] && dirs+=("$d")
 done
 
-omarchy-menu-images --selected "$current_background" "${dirs[@]}"
+omarchy-menu-images --filterable --selected "$current_background" "${dirs[@]}"
