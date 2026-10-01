@@ -4,14 +4,62 @@
 # omarchy:group=theme
 # omarchy:name=bg-switcher-all
 
-current_background=$(readlink -f "$HOME/.local/state/omarchy/current/background" 2>/dev/null)
+shopt -s nullglob
 
-dirs=()
-for d in \
-  "$HOME/.config/omarchy/themes"/*/backgrounds \
-  "$OMARCHY_PATH/themes"/*/backgrounds \
-  "$HOME/.config/omarchy/backgrounds"/*; do
-  [[ -d $d ]] && dirs+=("$d")
+state="$HOME/.local/state/omarchy/current"
+view="${XDG_CACHE_HOME:-$HOME/.cache}/omarchy/all-backgrounds"
+
+# The image picker keeps one image per file name, and themes reuse names
+# (1.png, omarchy.png), so every background is linked into one folder as
+# <theme>--<file>. That also lets the picker's filter match theme names.
+# Later sources win a clash: theme backgrounds over the user's per-theme ones,
+# as in the per-theme switcher, and a user theme over a stock theme of the
+# same name, as omarchy-theme-set stages them.
+declare -A backgrounds
+
+add_backgrounds() {
+  local theme=$1 dir=$2 image
+
+  for image in "$dir"/*; do
+    [[ -f $image ]] && backgrounds["$theme--${image##*/}"]=$image
+  done
+}
+
+for dir in "$HOME/.config/omarchy/backgrounds"/*/; do
+  dir=${dir%/}
+  add_backgrounds "${dir##*/}" "$dir"
 done
 
-omarchy-menu-images --filterable --selected "$current_background" "${dirs[@]}"
+for dir in "$OMARCHY_PATH/themes"/*/ "$HOME/.config/omarchy/themes"/*/; do
+  dir=${dir%/}
+  add_backgrounds "${dir##*/}" "$dir/backgrounds"
+done
+
+# Only touch links that changed: the picker caches its rows by folder mtime.
+mkdir -p "$view"
+
+declare -A links
+while IFS=$'\t' read -r -d '' name target; do
+  links[$name]=$target
+done < <(find "$view" -mindepth 1 -maxdepth 1 -type l -printf '%f\t%l\0')
+
+for name in "${!backgrounds[@]}"; do
+  [[ ${links[$name]-} == "${backgrounds[$name]}" ]] || ln -sfn "${backgrounds[$name]}" "$view/$name"
+done
+
+for name in "${!links[@]}"; do
+  [[ -n ${backgrounds[$name]+set} ]] || rm -f "$view/$name"
+done
+
+# Switching theme points the background at the copy staged under
+# current/theme, which is none of the originals linked above, so map it back
+# to the original by name; the picker then matches it through the link.
+current_background=$(readlink -f "$state/background" 2>/dev/null)
+staged_backgrounds=$(readlink -f "$state/theme/backgrounds" 2>/dev/null)
+
+if [[ -n $staged_backgrounds && $current_background == "$staged_backgrounds"/* ]]; then
+  theme_name=$(<"$state/theme.name")
+  current_background=${backgrounds["$theme_name--${current_background##*/}"]:-$current_background}
+fi
+
+omarchy-menu-images --filterable --selected "$current_background" "$view"
