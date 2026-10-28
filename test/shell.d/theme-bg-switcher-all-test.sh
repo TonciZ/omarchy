@@ -134,3 +134,19 @@ pass "a new background gets a link"
 
 [[ -f $view/not-a-link.txt ]] || fail "files that are not links are never removed"
 pass "files that are not links are never removed"
+
+# A background replaced at the same path keeps its link, but the folder's
+# mtime still moves, so the picker drops its cached preview.
+touch -d '2001-01-01' "$view"
+printf 'nord, redrawn' >"$omarchy/themes/nord/backgrounds/new.png"
+run_switcher
+[[ $(stat -c %Y "$view") != $(date -d '2001-01-01' +%s) ]] ||
+  fail "a background replaced in place refreshes the view"
+pass "a background replaced in place refreshes the view"
+
+# Hidden files are backgrounds too, as in the per-theme switcher.
+printf 'hidden' >"$home/.config/omarchy/backgrounds/nord/.hidden.png"
+run_switcher
+[[ $(readlink "$view/nord@.hidden.png") == "$home/.config/omarchy/backgrounds/nord/.hidden.png" ]] ||
+  fail "hidden backgrounds get a link" "$(ls -la "$view")"
+pass "hidden backgrounds get a link"
